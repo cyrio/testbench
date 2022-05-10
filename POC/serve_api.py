@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 import pandas as pd
 import joblib
 import pickle
+from elasticsearch import Elasticsearch
+from elasticsearch import helpers
+
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import recall_score
 
@@ -84,16 +87,44 @@ def predict_csv():
      # Load predictions in a dataframe
      y_pred_df = pd.DataFrame(y_pred, columns=['y_pred'])
 
-     # Save predictions and true labels in a single CSV file
+     # Concatenate y_test and y_pred_df in to a single dataframe
      predictions_df = pd.concat([y_test,y_pred_df], axis=1)
      print(predictions_df)
+
+     # Dataframe to dictionnary
+     predictions_dict = predictions_df.to_dict('records')
+     print(predictions_dict)
+
+     # Load data frame to Elasticsearch
+     es_client = Elasticsearch(host = "localhost", port = 9200)
+     #es_client = connections.create_connection(hosts=['http://0.0.0.0:5601'])
+     def doc_generator(list_of_dict):
+          for index, document in enumerate(list_of_dict):
+               yield {
+                         "_index": 'test_bench_predictions',
+                         "_type": "_doc",
+                         "_source": document,
+                    }
+     helpers.bulk(es_client, doc_generator(predictions_dict))
+
+
+     # Save predictions and true labels in a single CSV file
      predictions_df.to_csv('predictions.csv',index=False)
 
+     # # Load data frame to Elasticsearch
+     # es_client = Elasticsearch(host = "localhost", port = 9200)
+     # # Open csv file and bulk upload
+     # with open('predictions.csv') as f:
+     #      reader = csv.DictReader(f)
+     #      print(list(reader))
+     #      helpers.bulk(es_client, reader, index='test_bench_predictions')
+
      return """
-     <p>Predictions: {}</p>
-     <p>Accuracy: {}</p>
-     <p>Recall: {}</p>
+          <p>Predictions: {}</p>
+          <p>Accuracy: {}</p>
+          <p>Recall: {}</p>
      """.format(y_pred, accuracy_score(y_test, y_pred), recall_score(y_test, y_pred))
+
 
 
 if __name__ == '__main__':
